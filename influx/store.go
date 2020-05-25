@@ -65,10 +65,11 @@ func WithSendInterval(interval time.Duration) Option {
 
 func NewStore(addr, org, bucket, tokenLocation string, opts ...Option) (*Store, error) {
 	s := &Store{
-		org:          org,
-		bucket:       bucket,
-		bufferSize:   128,
-		sendInterval: 30 * time.Second,
+		tokenLocation: tokenLocation,
+		org:           org,
+		bucket:        bucket,
+		bufferSize:    128,
+		sendInterval:  30 * time.Second,
 	}
 	for _, o := range opts {
 		o(s)
