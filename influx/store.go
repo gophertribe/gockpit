@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -142,7 +143,16 @@ func (s *Store) readToken() string {
 }
 
 func (s *Store) saveToken(token string) error {
-	return afero.WriteFile(fs, s.tokenLocation, []byte(token), 0644)
+	file, err := fs.OpenFile(s.tokenLocation, os.O_WRONLY|os.O_CREATE, 0644)
+	if err != nil {
+		return fmt.Errorf("could not open token file: %w", err)
+	}
+	defer file.Close()
+	_, err = file.Write([]byte(token))
+	if err != nil {
+		return fmt.Errorf("could not write token file: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) sendAndRelease() error {
