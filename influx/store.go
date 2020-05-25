@@ -28,6 +28,7 @@ type Store struct {
 	inopts       []influxdb.Option
 	org          string
 	bucket       string
+	tokenLocation string
 	opts         Options
 	cancelSend   func()
 }
@@ -61,7 +62,7 @@ func WithSendInterval(interval time.Duration) Option {
 	}
 }
 
-func NewStore(addr, org, bucket string, opts ...Option) (*Store, error) {
+func NewStore(addr, org, bucket, tokenLocation string, opts ...Option) (*Store, error) {
 	s := &Store{
 		org:          org,
 		bucket:       bucket,
@@ -133,7 +134,7 @@ func (s *Store) Save(ctx context.Context, bucket, name string, fields map[string
 }
 
 func (s *Store) readToken() string {
-	tok, err := afero.ReadFile(fs, "/var/gockpit.influx.token")
+	tok, err := afero.ReadFile(fs, s.tokenLocation)
 	if err != nil && err != afero.ErrFileNotFound {
 		log.Warn().Err(err).Msg("could not read token file")
 	}
@@ -141,7 +142,7 @@ func (s *Store) readToken() string {
 }
 
 func (s *Store) saveToken(token string) error {
-	return afero.WriteFile(fs, "/var/gockpit.influx.token", []byte(token), 0644)
+	return afero.WriteFile(fs, s.tokenLocation, []byte(token), 0644)
 }
 
 func (s *Store) sendAndRelease() error {
