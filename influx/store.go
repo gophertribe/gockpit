@@ -20,17 +20,17 @@ func init() {
 }
 
 type Store struct {
-	mx           sync.Mutex
-	client       *influxdb.Client
-	metrics      []influxdb.Metric
-	sendInterval time.Duration
-	bufferSize   int
-	inopts       []influxdb.Option
-	org          string
-	bucket       string
+	mx            sync.Mutex
+	client        *influxdb.Client
+	metrics       []influxdb.Metric
+	sendInterval  time.Duration
+	bufferSize    int
+	inopts        []influxdb.Option
+	org           string
+	bucket        string
 	tokenLocation string
-	opts         Options
-	cancelSend   func()
+	opts          Options
+	cancelSend    func()
 }
 
 type Options struct {
