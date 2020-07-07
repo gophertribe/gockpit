@@ -72,7 +72,7 @@ func (mg *Metric) updateState(ctx context.Context, now time.Time, state, delta *
 type Supervisor struct {
 	mx               sync.Mutex
 	metrics          map[string]*Metric
-	state            State
+	state            *State
 	listeners        []Listener
 	store            ReadWriter
 	name             string
@@ -98,7 +98,7 @@ func NewSupervisor(name string, opts ...SupervisorOption) *Supervisor {
 	s := &Supervisor{
 		name:    name,
 		metrics: make(map[string]*Metric),
-		state: State{
+		state: &State{
 			data: make(map[string]interface{}),
 		},
 	}
@@ -146,7 +146,7 @@ func (s *Supervisor) Run(ctx context.Context) {
 				}
 				for _, mg := range s.metrics {
 					if now.After(mg.lastUpdate.Add(mg.interval)) {
-						mg.updateState(ctx, now, &s.state, delta)
+						mg.updateState(ctx, now, s.state, delta)
 						mg.lastUpdate = now
 					} else {
 						// copy previous error
@@ -157,7 +157,7 @@ func (s *Supervisor) Run(ctx context.Context) {
 				}
 				if len(delta.data) > 0 {
 					for _, l := range s.listeners {
-						l(&s.state, delta)
+						l(s.state, delta)
 					}
 					s.state.Apply(delta)
 				}

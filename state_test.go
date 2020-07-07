@@ -1,8 +1,11 @@
 package gockpit
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -70,4 +73,7 @@ func TestState_Apply(t *testing.T) {
 			},
 		},
 	}, s1)
+	js, err := json.Marshal(s1)
+	require.NoError(t, err)
+	fmt.Println(string(js))
 }

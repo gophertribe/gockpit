@@ -18,7 +18,7 @@ func TestSupervisor_Run(t *testing.T) {
 		assert.Equal(t, expectedDelta, delta, "delta state missmatch")
 	})
 	var p probeMock
-	sup.AddProbe("p1", 15*time.Millisecond, p.UpdateState)
+	sup.AddProbe("p1", 15*time.Millisecond, ProbeFunc(p.UpdateState))
 	sup.Run(context.Background())
 	p.On("Read").Return(10, nil).Once()
 	expectedCurrent = State{}
@@ -43,6 +43,10 @@ type probeMock struct {
 	mock.Mock
 }
 
-func (m *probeMock) UpdateState(state *State) {
+func (m *probeMock) UpdateState(ctx context.Context, state *State) {
+
+}
+
+func (m *probeMock) SetupState(ctx context.Context, state *State) {
 
 }
