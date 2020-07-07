@@ -13,7 +13,7 @@ type State struct {
 	errors Errors
 }
 
-func (s State) MarshalJSON() ([]byte, error) {
+func (s *State) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		State  map[string]interface{} `json:"state"`
 		Errors Errors                 `json:"errors"`
@@ -41,7 +41,7 @@ func (s *State) Set(key string, val interface{}) {
 	s.data[key] = val
 }
 
-func (s State) Int(name string) int {
+func (s *State) Int(name string) int {
 	s.mx.RLock()
 	defer s.mx.RUnlock()
 	if s.data == nil {
@@ -65,7 +65,7 @@ func (s State) Int(name string) int {
 	}
 }
 
-func (s State) Float(name string) float64 {
+func (s *State) Float(name string) float64 {
 	s.mx.RLock()
 	defer s.mx.RUnlock()
 	if s.data == nil {
@@ -85,7 +85,7 @@ func (s State) Float(name string) float64 {
 	}
 }
 
-func (s State) Elem(name string) interface{} {
+func (s *State) Elem(name string) interface{} {
 	s.mx.RLock()
 	defer s.mx.RUnlock()
 	if s.data == nil {
@@ -94,7 +94,7 @@ func (s State) Elem(name string) interface{} {
 	return s.data[name]
 }
 
-func (s State) Bool(name string) bool {
+func (s *State) Bool(name string) bool {
 	s.mx.RLock()
 	defer s.mx.RUnlock()
 	if s.data == nil {
@@ -112,7 +112,7 @@ func (s State) Bool(name string) bool {
 	}
 }
 
-func (s State) String(name string) string {
+func (s *State) String(name string) string {
 	s.mx.RLock()
 	defer s.mx.RUnlock()
 	if s.data == nil {
@@ -140,11 +140,11 @@ func (s State) String(name string) string {
 	}
 }
 
-func (s State) HasErrors() bool {
+func (s *State) HasErrors() bool {
 	return len(s.errors) > 0
 }
 
-func (s State) Err(name string) error {
+func (s *State) Err(name string) error {
 	s.mx.RLock()
 	defer s.mx.RUnlock()
 	if s.errors == nil {
@@ -153,7 +153,7 @@ func (s State) Err(name string) error {
 	return s.errors[name]
 }
 
-func (s State) SetError(code string, err error) {
+func (s *State) SetError(code string, err error) {
 	s.mx.Lock()
 	defer s.mx.Unlock()
 	if s.errors == nil {
@@ -169,7 +169,7 @@ func (s State) SetError(code string, err error) {
 	s.errors.Collect(code, err)
 }
 
-func (s State) ClearError(code string) {
+func (s *State) ClearError(code string) {
 	s.mx.Lock()
 	defer s.mx.Unlock()
 	if s.errors == nil {
@@ -180,7 +180,7 @@ func (s State) ClearError(code string) {
 	}
 }
 
-func (s State) getError(code string) error {
+func (s *State) getError(code string) error {
 	if err, found := s.errors[code]; found {
 		return err
 	}
