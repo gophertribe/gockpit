@@ -2,8 +2,9 @@ package gockpit
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/assert"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestState_Formats(t *testing.T) {
@@ -15,7 +16,7 @@ func TestState_Formats(t *testing.T) {
 			"D": "string value",
 			"E": true,
 			"F": struct{ Complex bool }{true},
-			keyErrors: map[string]error{
+			"errors": map[string]error{
 				"A": fmt.Errorf("dummy"),
 			},
 		},
@@ -38,7 +39,7 @@ func TestState_Apply(t *testing.T) {
 			"C": 5.0,
 			"E": true,
 			"F": struct{ Complex bool }{true},
-			keyErrors: map[string]error{
+			"errors": map[string]error{
 				"A": fmt.Errorf("dummy"),
 			},
 		},
@@ -50,7 +51,7 @@ func TestState_Apply(t *testing.T) {
 			"D": "string value",
 			"E": true,
 			"F": struct{ Complex bool }{true},
-			keyErrors: map[string]error{
+			"errors": map[string]error{
 				"B": fmt.Errorf("dummy"),
 			},
 		},
@@ -64,11 +65,9 @@ func TestState_Apply(t *testing.T) {
 			"D": "string value",
 			"E": true,
 			"F": struct{ Complex bool }{true},
-			keyErrors: map[string]error{
+			"errors": map[string]error{
 				"B": fmt.Errorf("dummy"),
 			},
 		},
 	}, s1)
 }
-
-

@@ -15,10 +15,10 @@ import (
 var defaultSamplingInterval = time.Second
 
 type Probe interface {
-	UpdateState(*State)
+	UpdateState(context.Context, *State)
 }
 
-type ProbeFunc func(*State)
+type ProbeFunc func(context.Context, *State)
 
 type Listener func(current, delta *State)
 
@@ -55,17 +55,17 @@ func NewMetric(name string, interval time.Duration, probe interface{}) *Metric {
 	}
 }
 
-func (mg *Metric) updateState(now time.Time, state, delta *State) {
+func (mg *Metric) updateState(ctx context.Context, now time.Time, state, delta *State) {
 	if !now.After(mg.lastUpdate.Add(mg.interval)) {
 		return
 	}
 	switch p := mg.probe.(type) {
 	case Probe:
-		p.UpdateState(delta)
+		p.UpdateState(ctx, delta)
 	case ProbeFunc:
 		// probe functions do not provide a possibility to copy errors
 		// during sampling
-		p(delta)
+		p(ctx, delta)
 	}
 }
 
@@ -146,7 +146,7 @@ func (s *Supervisor) Run(ctx context.Context) {
 				}
 				for _, mg := range s.metrics {
 					if now.After(mg.lastUpdate.Add(mg.interval)) {
-						mg.updateState(now, &s.state, delta)
+						mg.updateState(ctx, now, &s.state, delta)
 						mg.lastUpdate = now
 					} else {
 						// copy previous error

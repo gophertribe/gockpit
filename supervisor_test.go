@@ -3,14 +3,15 @@ package gockpit
 import (
 	"context"
 	"fmt"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 func TestSupervisor_Run(t *testing.T) {
-	sup := NewSupervisor("test", WithSamplingInterval(20 * time.Millisecond))
+	sup := NewSupervisor("test", WithSamplingInterval(20*time.Millisecond))
 	var expectedCurrent, expectedDelta State
 	sup.AddListener(func(current, delta *State) {
 		assert.Equal(t, expectedCurrent, current, "current state mismatch")
@@ -33,7 +34,7 @@ func TestSupervisor_Run(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 	p.On("Read").Return(0, fmt.Errorf("dummy")).Once()
 	expectedCurrent = State{data: map[string]interface{}{"_errors": Errors{}, "p1": 12}}
-	expectedDelta = State{data: map[string]interface{}{"_errors": Errors{"p1": fmt.Errorf("dummy")}, "p1": 0}}
+	expectedDelta = State{data: map[string]interface{}{"_errors": Errors{"p1": Error{Err: fmt.Errorf("dummy")}}, "p1": 0}}
 	time.Sleep(20 * time.Millisecond)
 	sup.Stop()
 }
@@ -45,4 +46,3 @@ type probeMock struct {
 func (m *probeMock) UpdateState(state *State) {
 
 }
-
