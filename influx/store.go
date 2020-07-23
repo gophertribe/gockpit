@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -140,7 +141,7 @@ func (s *Store) readToken() string {
 	if err != nil && err != afero.ErrFileNotFound {
 		log.Warn().Err(err).Msg("could not read token file")
 	}
-	return string(tok)
+	return strings.TrimSpace(string(tok))
 }
 
 func (s *Store) saveToken(token string) error {
