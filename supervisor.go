@@ -111,6 +111,10 @@ func NewSupervisor(name string, opts ...SupervisorOption) *Supervisor {
 	return s
 }
 
+func (s *Supervisor) GetState() *State {
+	return s.state
+}
+
 func (s *Supervisor) Errors() Errors {
 	return s.state.errors
 }

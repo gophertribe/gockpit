@@ -16,7 +16,7 @@ type State struct {
 func (s *State) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		State  map[string]interface{} `json:"state"`
-		Errors Errors                 `json:"errors"`
+		Errors Errors                 `json:"errors,omitempty"`
 	}{s.data, s.errors})
 }
 
@@ -32,13 +32,14 @@ func (s *State) Apply(other *State) {
 	}
 }
 
-func (s *State) Set(key string, val interface{}) {
+func (s *State) Set(key string, val interface{}) *State {
 	s.mx.Lock()
 	defer s.mx.Unlock()
 	if s.data == nil {
 		s.data = make(map[string]interface{})
 	}
 	s.data[key] = val
+	return s
 }
 
 func (s *State) Int(name string) int {
@@ -153,7 +154,7 @@ func (s *State) Err(name string) error {
 	return s.errors[name]
 }
 
-func (s *State) SetError(code string, err error) {
+func (s *State) SetError(code string, err error) *State {
 	s.mx.Lock()
 	defer s.mx.Unlock()
 	if s.errors == nil {
@@ -164,12 +165,13 @@ func (s *State) SetError(code string, err error) {
 		if _, found := s.errors[code]; found {
 			delete(s.errors, code)
 		}
-		return
+		return s
 	}
 	s.errors.Collect(code, err)
+	return s
 }
 
-func (s *State) ClearError(code string) {
+func (s *State) ClearError(code string) *State {
 	s.mx.Lock()
 	defer s.mx.Unlock()
 	if s.errors == nil {
@@ -178,6 +180,7 @@ func (s *State) ClearError(code string) {
 	if _, found := s.errors[code]; found {
 		delete(s.errors, code)
 	}
+	return s
 }
 
 func (s *State) getError(code string) error {
