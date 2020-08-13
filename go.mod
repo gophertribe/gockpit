@@ -7,5 +7,6 @@ require (
 	github.com/influxdata/influxdb-client-go v0.1.5
 	github.com/rs/zerolog v1.18.0
 	github.com/spf13/afero v1.2.2
-	github.com/stretchr/testify v1.3.0
+	github.com/stretchr/testify v1.4.0
+	nhooyr.io/websocket v1.8.6
 )
