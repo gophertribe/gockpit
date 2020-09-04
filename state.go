@@ -230,3 +230,9 @@ func (s *State) getError(code string) error {
 	}
 	return nil
 }
+
+func (s *State) AddAlert(ID string, a *Alert) {
+	s.mx.Lock()
+	defer s.mx.Unlock()
+	s.alerts[ID] = a
+}
