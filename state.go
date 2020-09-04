@@ -27,7 +27,7 @@ func (s *StateMutation) SetError(key string, err error) *StateMutation {
 	if s.state.errors == nil {
 		s.state.errors = make(Errors)
 	}
-	if s.state.errors[key].Error() == err.Error() {
+	if err == s.state.errors[key].Err {
 		return s
 	}
 	s.dirty = true
