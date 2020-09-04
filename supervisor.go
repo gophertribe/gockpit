@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-chi/chi"
+
 	"github.com/rs/zerolog/log"
 )
 
@@ -199,4 +201,10 @@ func (s *Supervisor) handlerState(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Supervisor) String(id string) string {
 	return s.state.String(id)
+}
+
+func (s *Supervisor) HTTPHandler() http.Handler {
+	r := chi.NewRouter()
+	r.Get("/state", s.handlerState)
+	return r
 }
