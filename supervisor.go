@@ -129,6 +129,9 @@ func (s *Supervisor) AddProbe(name string, interval time.Duration, p interface{}
 func (s *Supervisor) AddAlert(ID string, a *Alert) {
 	s.mx.Lock()
 	defer s.mx.Unlock()
+	if s.state.alerts == nil {
+		s.state.alerts = make(Alerts)
+	}
 	s.state.alerts[ID] = a
 }
 
