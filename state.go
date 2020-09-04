@@ -24,6 +24,9 @@ func (s *StateMutation) Set(key string, val interface{}) *StateMutation {
 }
 
 func (s *StateMutation) SetError(key string, err error) *StateMutation {
+	if s.state.errors == nil {
+		s.state.errors = make(Errors)
+	}
 	if s.state.errors[key].Error() == err.Error() {
 		return s
 	}
