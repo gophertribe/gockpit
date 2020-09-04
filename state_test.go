@@ -59,7 +59,10 @@ func TestState_Apply(t *testing.T) {
 			},
 		},
 	}
-	s1.Apply(s2)
+	mutation := s1.With()
+	mutation.mutation = s2
+	mutation.dirty = true
+	mutation.Apply()
 	assert.Equal(t, &State{
 		data: map[string]interface{}{
 			"A": "filled",

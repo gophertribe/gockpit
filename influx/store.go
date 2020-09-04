@@ -110,7 +110,7 @@ func NewStore(addr, org, bucket, tokenLocation string, opts ...Option) (*Store, 
 		if res.Auth.Token != "" {
 			err := s.saveToken(res.Auth.Token)
 			if err != nil {
-				log.Error().Err(err).Msgf("could not save influx token [%s]: %w", res.Auth.Token, err)
+				log.Error().Err(err).Msgf("could not save influx token [%s]", res.Auth.Token)
 			}
 		}
 	}

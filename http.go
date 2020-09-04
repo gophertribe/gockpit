@@ -119,7 +119,7 @@ func (pub *EventPublisher) writeState(ctx context.Context, peer string, state *S
 	log.Info().Str("peer", peer).Msg("wrote state to peer")
 }
 
-func (pub *EventPublisher) publishState(current *State, _ *State) {
+func (pub *EventPublisher) publishState(current *State) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	var wg sync.WaitGroup
