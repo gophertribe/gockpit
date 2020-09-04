@@ -7,21 +7,59 @@ import (
 	"sync"
 )
 
+type StateMutation struct {
+	state    *State
+	mutation *State
+	dirty    bool
+}
+
+func (s *StateMutation) Set(key string, val interface{}) *StateMutation {
+	// if nothing changes the mutation remains empty
+	if s.state.data[key] == val {
+		return s
+	}
+	s.dirty = true
+	s.mutation.set(key, val)
+	return s
+}
+
+func (s *StateMutation) SetError(key string, err error) *StateMutation {
+	if s.state.errors[key].Error() == err.Error() {
+		return s
+	}
+	s.dirty = true
+	s.mutation.setError(key, err)
+	return s
+}
+
+func (s *StateMutation) Apply() {
+	s.state.apply(s.mutation)
+}
+
 type State struct {
 	mx     sync.RWMutex
 	data   map[string]interface{}
 	errors Errors
+	alerts Alerts
+}
+
+func (s *State) With() *StateMutation {
+	return &StateMutation{
+		state:    s,
+		mutation: &State{},
+	}
 }
 
 func (s *State) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		State  map[string]interface{} `json:"state"`
 		Errors Errors                 `json:"errors,omitempty"`
-	}{s.data, s.errors})
+		Alerts Alerts                 `json:"alerts,omitempty"`
+	}{s.data, s.errors, s.alerts})
 }
 
 // Apply copies another state into s. This relies on the assumption that state is extensible only and nothing gets deleted from it.
-func (s *State) Apply(other *State) {
+func (s *State) apply(other *State) {
 	s.mx.Lock()
 	defer s.mx.Unlock()
 	if s.data == nil {
@@ -30,9 +68,12 @@ func (s *State) Apply(other *State) {
 	for key, val := range other.data {
 		s.data[key] = val
 	}
+	for key, a := range s.alerts {
+		a.update(s.data[key], a)
+	}
 }
 
-func (s *State) Set(key string, val interface{}) *State {
+func (s *State) set(key string, val interface{}) *State {
 	s.mx.Lock()
 	defer s.mx.Unlock()
 	if s.data == nil {
@@ -154,7 +195,7 @@ func (s *State) Err(name string) error {
 	return s.errors[name]
 }
 
-func (s *State) SetError(code string, err error) *State {
+func (s *State) setError(code string, err error) *State {
 	s.mx.Lock()
 	defer s.mx.Unlock()
 	if s.errors == nil {
@@ -171,7 +212,7 @@ func (s *State) SetError(code string, err error) *State {
 	return s
 }
 
-func (s *State) ClearError(code string) *State {
+func (s *State) clearError(code string) *State {
 	s.mx.Lock()
 	defer s.mx.Unlock()
 	if s.errors == nil {

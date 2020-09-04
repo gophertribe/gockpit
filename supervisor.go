@@ -8,19 +8,18 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-chi/chi"
 	"github.com/rs/zerolog/log"
 )
 
 var defaultSamplingInterval = time.Second
 
 type Probe interface {
-	UpdateState(context.Context, *State)
+	UpdateState(context.Context, *StateMutation)
 }
 
-type ProbeFunc func(context.Context, *State)
+type ProbeFunc func(context.Context, *StateMutation)
 
-type Listener func(current, delta *State)
+type Listener func(*State)
 
 type Reader interface {
 }
@@ -55,17 +54,17 @@ func NewMetric(name string, interval time.Duration, probe interface{}) *Metric {
 	}
 }
 
-func (mg *Metric) updateState(ctx context.Context, now time.Time, state, delta *State) {
+func (mg *Metric) updateState(ctx context.Context, now time.Time, mutation *StateMutation) {
 	if !now.After(mg.lastUpdate.Add(mg.interval)) {
 		return
 	}
 	switch p := mg.probe.(type) {
 	case Probe:
-		p.UpdateState(ctx, delta)
+		p.UpdateState(ctx, mutation)
 	case ProbeFunc:
 		// probe functions do not provide a possibility to copy errors
 		// during sampling
-		p(ctx, delta)
+		p(ctx, mutation)
 	}
 }
 
@@ -140,30 +139,24 @@ func (s *Supervisor) Run(ctx context.Context) {
 			select {
 			case now := <-ticker.C:
 				s.mx.Lock()
-				delta := &State{
-					data:   make(map[string]interface{}, len(s.state.data)),
-					errors: make(Errors, len(s.state.errors)),
-				}
-				// copy errors as they can get cleared
-				for id, e := range s.state.errors {
-					delta.SetError(id, e)
-				}
+				mutation := s.state.With()
+
 				for _, mg := range s.metrics {
 					if now.After(mg.lastUpdate.Add(mg.interval)) {
-						mg.updateState(ctx, now, s.state, delta)
+						mg.updateState(ctx, now, mutation)
 						mg.lastUpdate = now
 					} else {
 						// copy previous error
 						if err := s.state.getError(mg.name); err != nil {
-							delta.SetError(mg.name, err)
+							mutation.SetError(mg.name, err)
 						}
 					}
 				}
-				if len(delta.data) > 0 {
+				mutation.Apply()
+				if mutation.dirty {
 					for _, l := range s.listeners {
-						l(s.state, delta)
+						l(s.state)
 					}
-					s.state.Apply(delta)
 				}
 				// persist state no matter if it has changed (time series)
 				if s.store != nil {
@@ -193,26 +186,15 @@ func (s *Supervisor) Stop() {
 func (s *Supervisor) CollectError(code string, err error) error {
 	s.mx.Lock()
 	defer s.mx.Unlock()
-	s.state.SetError(code, err)
+	s.state.setError(code, err)
 	return err
 }
 
-func (s *Supervisor) HTTPHandler() http.Handler {
-	r := chi.NewRouter()
-	r.Get("/state", s.handlerState)
-	r.Get("/ws", s.handlerRealtime)
-	return r
-}
-
-func (s *Supervisor) handlerState(w http.ResponseWriter, r *http.Request) {
+func (s *Supervisor) handlerState(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	enc := json.NewEncoder(w)
 	_ = enc.Encode(s.state)
-}
-
-func (s *Supervisor) handlerRealtime(w http.ResponseWriter, r *http.Request) {
-
 }
 
 func (s *Supervisor) String(id string) string {
