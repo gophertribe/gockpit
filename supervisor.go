@@ -126,6 +126,12 @@ func (s *Supervisor) AddProbe(name string, interval time.Duration, p interface{}
 	s.metrics[name] = NewMetric(name, interval, p)
 }
 
+func (s *Supervisor) AddAlert(ID string, a *Alert) {
+	s.mx.Lock()
+	defer s.mx.Unlock()
+	s.state.alerts[ID] = a
+}
+
 func (s *Supervisor) AddListener(l Listener) {
 	s.mx.Lock()
 	defer s.mx.Unlock()
