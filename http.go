@@ -40,6 +40,7 @@ func NewConn(peer string, conn *websocket.Conn) *Conn {
 }
 
 type EventPublisher struct {
+	mx          sync.Mutex
 	connections map[string]*Conn
 	sup         *Supervisor
 }
@@ -73,7 +74,9 @@ func (pub *EventPublisher) EventsHandler() http.HandlerFunc {
 			}
 		}
 		conn := NewConn(r.RemoteAddr, ws)
+		pub.mx.Lock()
 		pub.connections[r.RemoteAddr] = conn
+		pub.mx.Unlock()
 		pub.writeState(r.Context(), r.RemoteAddr, pub.sup.GetState(), conn, nil)
 	}
 }
@@ -113,7 +116,9 @@ func (pub *EventPublisher) writeState(ctx context.Context, peer string, state *S
 		}
 		log.Info().Str("peer", peer).Int("status", int(status)).Msg("closing peer connection")
 		_ = conn.ws.Close(websocket.StatusAbnormalClosure, "error writing state")
+		pub.mx.Lock()
 		delete(pub.connections, peer)
+		pub.mx.Unlock()
 		return
 	}
 	log.Info().Str("peer", peer).Msg("wrote state to peer")
@@ -123,9 +128,11 @@ func (pub *EventPublisher) publishState(current *State) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	var wg sync.WaitGroup
+	pub.mx.Lock()
 	for peer, conn := range pub.connections {
 		wg.Add(1)
 		go pub.writeState(ctx, peer, current, conn, &wg)
 	}
+	pub.mx.Unlock()
 	wg.Wait()
 }
