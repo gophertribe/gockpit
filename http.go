@@ -88,7 +88,7 @@ func writeJSONResponse(w http.ResponseWriter, code int, resp interface{}) error 
 		return err
 	}
 
-	w.Header().Set("Content-Type", JSONContentType)
+	w.Header().Set("Content-MsgType", JSONContentType)
 	w.WriteHeader(code)
 
 	_, err = w.Write(enc)

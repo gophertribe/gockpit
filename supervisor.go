@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi"
-
-	"github.com/rs/zerolog/log"
 )
 
 var defaultSamplingInterval = time.Second
@@ -71,14 +69,15 @@ func (mg *Metric) updateState(ctx context.Context, now time.Time, mutation *Stat
 }
 
 type Supervisor struct {
-	mx               sync.Mutex
-	metrics          map[string]*Metric
-	state            *State
-	listeners        []Listener
-	store            ReadWriter
-	name             string
-	samplingInterval time.Duration
-	cancel           func()
+	mx        sync.Mutex
+	wg        sync.WaitGroup
+	metrics   map[string]*Metric
+	state     *State
+	listeners []Listener
+	store     ReadWriter
+	triggers  map[string]Trigger
+	name      string
+	cancel    func()
 }
 
 type SupervisorOption func(*Supervisor)
@@ -86,12 +85,6 @@ type SupervisorOption func(*Supervisor)
 func WithStore(store ReadWriter) SupervisorOption {
 	return func(supervisor *Supervisor) {
 		supervisor.store = store
-	}
-}
-
-func WithSamplingInterval(interval time.Duration) SupervisorOption {
-	return func(supervisor *Supervisor) {
-		supervisor.samplingInterval = interval
 	}
 }
 
@@ -106,10 +99,14 @@ func NewSupervisor(name string, opts ...SupervisorOption) *Supervisor {
 	for _, o := range opts {
 		o(s)
 	}
-	if s.samplingInterval == 0 {
-		s.samplingInterval = defaultSamplingInterval
-	}
 	return s
+}
+
+func (s *Supervisor) RegisterTrigger(ID string, t Trigger) {
+	if s.triggers == nil {
+		s.triggers = make(map[string]Trigger)
+	}
+	s.triggers[ID] = t
 }
 
 func (s *Supervisor) GetState() *State {
@@ -118,12 +115,6 @@ func (s *Supervisor) GetState() *State {
 
 func (s *Supervisor) Errors() Errors {
 	return s.state.errors
-}
-
-func (s *Supervisor) AddProbe(name string, interval time.Duration, p interface{}) {
-	s.mx.Lock()
-	defer s.mx.Unlock()
-	s.metrics[name] = NewMetric(name, interval, p)
 }
 
 func (s *Supervisor) AddAlert(ID string, a *Alert) {
@@ -143,48 +134,9 @@ func (s *Supervisor) AddListener(l Listener) {
 
 func (s *Supervisor) Run(ctx context.Context) {
 	ctx, s.cancel = context.WithCancel(ctx)
-	go func() {
-		ticker := time.NewTicker(s.samplingInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case now := <-ticker.C:
-				s.mx.Lock()
-				mutation := s.state.With()
-
-				for _, mg := range s.metrics {
-					if now.After(mg.lastUpdate.Add(mg.interval)) {
-						mg.updateState(ctx, now, mutation)
-						mg.lastUpdate = now
-					} else {
-						// copy previous error
-						if err := s.state.getError(mg.name); err != nil {
-							mutation.SetError(mg.name, err)
-						}
-					}
-				}
-				mutation.Apply()
-				if mutation.dirty {
-					for _, l := range s.listeners {
-						l(s.state)
-					}
-				}
-				// persist state no matter if it has changed (time series)
-				if s.store != nil {
-					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-					s.state.mx.RLock()
-					err := s.store.Save(ctx, "gockpit", s.name, s.state.data, nil)
-					s.state.mx.RUnlock()
-					cancel()
-					if err != nil {
-						log.Error().Err(err).Msg("could not save metrics state")
-					}
-				}
-				s.mx.Unlock()
-			case <-ctx.Done():
-			}
-		}
-	}()
+	for _, t := range s.triggers {
+		t.Update(ctx, s.state, s.listeners, s.store, &s.wg)
+	}
 }
 
 func (s *Supervisor) Stop() {
@@ -192,6 +144,7 @@ func (s *Supervisor) Stop() {
 		return
 	}
 	s.cancel()
+	s.wg.Wait()
 }
 
 func (s *Supervisor) CollectError(code string, err error) error {
@@ -202,7 +155,7 @@ func (s *Supervisor) CollectError(code string, err error) error {
 }
 
 func (s *Supervisor) handlerState(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-MsgType", "application/json")
 	w.WriteHeader(http.StatusOK)
 	enc := json.NewEncoder(w)
 	_ = enc.Encode(s.state)
