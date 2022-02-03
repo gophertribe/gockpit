@@ -11,7 +11,7 @@ require (
 	github.com/fatih/color v1.7.0
 	github.com/go-chi/chi v4.0.3+incompatible
 	github.com/google/uuid v1.3.0
-	github.com/gophertribe/snmp v0.2.0
+	github.com/gophertribe/snmp v0.3.0
 	github.com/influxdata/influxdb-client-go/v2 v2.4.0
 	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/shirou/gopsutil v3.21.7+incompatible
@@ -21,5 +21,3 @@ require (
 	go.etcd.io/bbolt v1.3.6
 	nhooyr.io/websocket v1.8.6
 )
-
-replace github.com/gophertribe/snmp v0.2.0 => ../snmp
