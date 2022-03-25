@@ -37,7 +37,7 @@ func GetInterfacesHandler(fs afero.Fs, path string, mainIf string) http.HandlerF
 			}
 			res = append(res, w)
 		}
-		w.Header().Set("Content-MsgType", "application/json")
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_ = enc.Encode(res)
 	}

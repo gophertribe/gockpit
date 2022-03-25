@@ -114,7 +114,7 @@ func (c *Client) Setup(username, password, org, bucket string, retention time.Du
 	}
 	body, _ := json.Marshal(setup)
 	req, _ := http.NewRequest(http.MethodPost, c.addr+"/api/v2/setup", bytes.NewBuffer(body))
-	req.Header.Add("Content-MsgType", "application/json")
+	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Authorization", fmt.Sprintf("Token %s", c.token))
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -179,7 +179,7 @@ func (c *Client) WriteMeasurement(_ context.Context, org, bucket, measurement st
 	q.Add("bucket", bucket)
 	q.Add("org", org)
 	req.URL.RawQuery = q.Encode()
-	req.Header.Add("Content-MsgType", "text/plain; charset=utf-8")
+	req.Header.Add("Content-Type", "text/plain; charset=utf-8")
 	req.Header.Add("Content-Encoding", "identity")
 	req.Header.Add("Authorization", fmt.Sprintf("Token %s", c.token))
 	req.Header.Add("Accept", "application/json")
