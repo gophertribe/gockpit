@@ -5,9 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"os"
+	"net/http/httputil"
 	"strconv"
 	"strings"
 	"time"
@@ -18,10 +17,6 @@ import (
 type Logger interface {
 	Debugf(string, ...interface{})
 	Infof(string, ...interface{})
-}
-
-type CallOpts struct {
-	Verbose bool
 }
 
 type Client struct {
@@ -93,11 +88,7 @@ func (c *Client) NeedSetup(ctx context.Context) (bool, error) {
 	return status.Allowed, nil
 }
 
-func (c *Client) Setup(username, password, org, bucket string, retention time.Duration, opts ...CallOpts) (string, error) {
-	verbose := false
-	if len(opts) > 0 {
-		verbose = opts[0].Verbose
-	}
+func (c *Client) Setup(username, password, org, bucket string, retention time.Duration) (string, error) {
 	setup := struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -121,10 +112,12 @@ func (c *Client) Setup(username, password, org, bucket string, retention time.Du
 		return "", fmt.Errorf("error during setup call: %w", err)
 	}
 	if resp.StatusCode != http.StatusCreated {
-		if verbose {
-			defer func() { _ = resp.Body.Close() }()
-			_, _ = io.Copy(os.Stderr, resp.Body)
-		}
+		fmt.Println("--- REQUEST ---")
+		dump, _ := httputil.DumpRequest(req, true)
+		fmt.Println(string(dump))
+		fmt.Println("--- RESPONSE ---")
+		dump, _ = httputil.DumpResponse(resp, true)
+		fmt.Println(string(dump))
 		return "", fmt.Errorf("unexpected setup call response status code (%d)", resp.StatusCode)
 	}
 	token := struct {
@@ -145,11 +138,7 @@ func (c *Client) SignOut() {
 	// do nothing
 }
 
-func (c *Client) WriteMeasurement(_ context.Context, org, bucket, measurement string, fields map[string]interface{}, tags map[string]string, timestamp time.Time, logger Logger, opts ...CallOpts) error {
-	verbose := false
-	if len(opts) > 0 {
-		verbose = opts[0].Verbose
-	}
+func (c *Client) WriteMeasurement(_ context.Context, org, bucket, measurement string, fields map[string]interface{}, tags map[string]string, timestamp time.Time, logger Logger) error {
 	var builder strings.Builder
 	builder.WriteString(measurement)
 	for key, val := range tags {
@@ -190,10 +179,12 @@ func (c *Client) WriteMeasurement(_ context.Context, org, bucket, measurement st
 		return fmt.Errorf("error during setup call: %w", err)
 	}
 	if resp.StatusCode != http.StatusNoContent {
-		if verbose {
-			defer func() { _ = resp.Body.Close() }()
-			_, _ = io.Copy(os.Stderr, resp.Body)
-		}
+		fmt.Println("--- REQUEST ---")
+		dump, _ := httputil.DumpRequest(req, true)
+		fmt.Println(string(dump))
+		fmt.Println("--- RESPONSE ---")
+		dump, _ = httputil.DumpResponse(resp, true)
+		fmt.Println(string(dump))
 		return fmt.Errorf("unexpected status code (%d)", resp.StatusCode)
 	}
 	return nil
