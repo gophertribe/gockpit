@@ -7,6 +7,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"reflect"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -47,6 +48,7 @@ type StdLogger interface {
 }
 
 type Bolt struct {
+	mx sync.Mutex
 	path   string
 	pub    Publisher
 	logger StdLogger
@@ -81,6 +83,8 @@ func NewBolt(path string, pub Publisher, logger StdLogger) (*Bolt, error) {
 }
 
 func (b *Bolt) Log(ctx context.Context, l *Event) error {
+	b.mx.Lock()
+	defer b.mx.Unlock()
 	tx, err := b.db.Begin(true)
 	if err != nil {
 		return fmt.Errorf("could not open database transaction: %w", err)
