@@ -126,6 +126,12 @@ func (b *Bolt) RetentionLoop(ctx context.Context, retention, period time.Duratio
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		now := time.Now()
+		err := b.removeBefore(now.Add(-retention))
+		if err != nil {
+			b.logger.Infof("could not evict audit store: %v", err)
+		}
+		b.logger.Infof("audit retention loop iteration executed in %v", time.Since(now))
 		for {
 			select {
 			case now := <-time.After(period):
