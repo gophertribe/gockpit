@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/gob"
+	"errors"
 	"fmt"
 	"reflect"
 	"sync"
@@ -35,20 +36,13 @@ type Publisher interface {
 	Publish(ctx context.Context, msg interface{}) error
 }
 
-type Logger interface {
-	Error(ctx context.Context, ns, code string, payload interface{})
-	Info(ctx context.Context, ns, event string, payload interface{})
-	GetPage(page, pageSize int, filters ...Filter) ([]Event, int, error)
-	SetError(ctx context.Context, ns, code string, err error)
-	ClearError(ctx context.Context, ns, code string, err error)
-}
-
 type StdLogger interface {
+	Info(string)
 	Infof(string, ...interface{})
 }
 
 type Bolt struct {
-	mx sync.Mutex
+	mx     sync.Mutex
 	path   string
 	pub    Publisher
 	logger StdLogger
@@ -80,6 +74,17 @@ func NewBolt(path string, pub Publisher, logger StdLogger) (*Bolt, error) {
 		return b, fmt.Errorf("could not commit transaction: %w", err)
 	}
 	return b, nil
+}
+
+func (b *Bolt) Close() error {
+	if b.db == nil {
+		return nil
+	}
+	err := b.db.Close()
+	if err != nil {
+		return fmt.Errorf("could not close underlying database: %w", err)
+	}
+	return nil
 }
 
 func (b *Bolt) Log(ctx context.Context, l *Event) error {
@@ -114,6 +119,59 @@ func (b *Bolt) Log(ctx context.Context, l *Event) error {
 		return fmt.Errorf("could not commit transaction: %w", err)
 	}
 	return b.pub.Publish(ctx, l)
+}
+
+func (b *Bolt) RetentionLoop(ctx context.Context, retention, period time.Duration, wg *sync.WaitGroup) {
+	b.logger.Info("starting audit retention loop")
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case now := <-time.After(period):
+				err := b.removeBefore(now.Add(-retention))
+				if err != nil {
+					b.logger.Infof("could not evict audit store: %v", err)
+				}
+				b.logger.Infof("audit retention loop iteration executed in %v", time.Since(now))
+			case <-ctx.Done():
+				b.logger.Info("terminating audit retention loop")
+				return
+			}
+		}
+	}()
+}
+
+func (b *Bolt) removeBefore(stamp time.Time) error {
+	b.mx.Lock()
+	defer b.mx.Unlock()
+	tx, err := b.db.Begin(true)
+	if err != nil {
+		return fmt.Errorf("could not open database transaction: %w", err)
+	}
+	defer func() {
+		err = tx.Rollback()
+		if !errors.Is(err, bbolt.ErrTxClosed) {
+			b.logger.Infof("could not rollback transaction: %v", err)
+		}
+	}()
+	bucket := tx.Bucket([]byte(logBucket))
+	limit := uint64(stamp.Unix())
+	c := bucket.Cursor()
+	for key, _ := c.First(); key != nil; key, _ = c.Next() {
+		stamp := binary.BigEndian.Uint64(key)
+		if stamp > limit {
+			continue
+		}
+		if err := c.Delete(); err != nil {
+			return fmt.Errorf("could not delete key %d: %w", stamp, err)
+		}
+	}
+	err = tx.Commit()
+	if err != nil {
+		return fmt.Errorf("could not commit transaction: %w", err)
+	}
+	return nil
 }
 
 func (b *Bolt) Info(ctx context.Context, namespace, code string, payload interface{}) {
