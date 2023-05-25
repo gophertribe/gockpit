@@ -7,6 +7,7 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
 	"sync"
 	"time"
@@ -24,6 +25,8 @@ const (
 	levelInfo  = "info"
 	levelError = "error"
 )
+
+const txmax = 1 << 25
 
 func init() {
 	gob.Register(Event{})
@@ -121,23 +124,57 @@ func (b *Bolt) Log(ctx context.Context, l *Event) error {
 	return b.pub.Publish(ctx, l)
 }
 
-func (b *Bolt) RetentionLoop(ctx context.Context, retention, period time.Duration, wg *sync.WaitGroup) {
+type RetentionLoopOptions struct {
+	LogRetention  time.Duration
+	LogMaxRecords int
+	Compact       bool
+}
+
+func (b *Bolt) RetentionLoop(ctx context.Context, opts RetentionLoopOptions, period time.Duration, wg *sync.WaitGroup) {
 	b.logger.Info("starting audit retention loop")
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		now := time.Now()
-		err := b.removeBefore(now.Add(-retention))
-		if err != nil {
-			b.logger.Infof("could not evict audit store: %v", err)
+		if opts.LogRetention > 0 {
+			err := b.removeBefore(now.Add(-opts.LogRetention))
+			if err != nil {
+				b.logger.Infof("could not evict outdated audit logs: %v", err)
+			}
+		}
+		if opts.LogMaxRecords > 0 {
+			err := b.removeOverLimit(opts.LogMaxRecords)
+			if err != nil {
+				b.logger.Infof("could not evict audit logs over limit: %v", err)
+			}
+		}
+		if opts.Compact {
+			err := b.compact()
+			if err != nil {
+				b.logger.Infof("could not compact database: %v", err)
+			}
 		}
 		b.logger.Infof("audit retention loop iteration executed in %v", time.Since(now))
 		for {
 			select {
 			case now := <-time.After(period):
-				err := b.removeBefore(now.Add(-retention))
-				if err != nil {
-					b.logger.Infof("could not evict audit store: %v", err)
+				if opts.LogRetention > 0 {
+					err := b.removeBefore(now.Add(-opts.LogRetention))
+					if err != nil {
+						b.logger.Infof("could not evict outdated audit logs: %v", err)
+					}
+				}
+				if opts.LogMaxRecords > 0 {
+					err := b.removeOverLimit(opts.LogMaxRecords)
+					if err != nil {
+						b.logger.Infof("could not evict audit logs over limit: %v", err)
+					}
+				}
+				if opts.Compact {
+					err := b.compact()
+					if err != nil {
+						b.logger.Infof("could not compact database: %v", err)
+					}
 				}
 				b.logger.Infof("audit retention loop iteration executed in %v", time.Since(now))
 			case <-ctx.Done():
@@ -146,6 +183,29 @@ func (b *Bolt) RetentionLoop(ctx context.Context, retention, period time.Duratio
 			}
 		}
 	}()
+}
+
+func (b *Bolt) removeOverLimit(maxRecords int) error {
+	tx, err := b.db.Begin(true)
+	if err != nil {
+		return fmt.Errorf("could not open database transaction: %w", err)
+	}
+	defer func() {
+		err = tx.Rollback()
+		if !errors.Is(err, bbolt.ErrTxClosed) {
+			b.logger.Infof("could not rollback transaction: %v", err)
+		}
+	}()
+	bucket := tx.Bucket([]byte(logBucket))
+	c := bucket.Cursor()
+	if diff := bucket.Stats().KeyN - maxRecords; diff > 0 {
+		for ; diff > 0; diff-- {
+			if err := c.Delete(); err != nil {
+				return fmt.Errorf("could not delete key: %w", err)
+			}
+		}
+	}
+	return nil
 }
 
 func (b *Bolt) removeBefore(stamp time.Time) error {
@@ -176,6 +236,30 @@ func (b *Bolt) removeBefore(stamp time.Time) error {
 	err = tx.Commit()
 	if err != nil {
 		return fmt.Errorf("could not commit transaction: %w", err)
+	}
+	return nil
+}
+
+func (b *Bolt) compact() error {
+	// compact the database
+	nextPath := b.path + ".next"
+	next, err := bbolt.Open(nextPath, 0600, bbolt.DefaultOptions)
+	if err != nil {
+		return fmt.Errorf("could not open next audit store from %s: %w", nextPath, err)
+	}
+	err = bbolt.Compact(next, b.db, txmax)
+	_ = next.Close()
+	_ = b.db.Close()
+	if err != nil {
+		return fmt.Errorf("could not compact the database: %w", err)
+	}
+	err = os.Rename(nextPath, b.path)
+	if err != nil {
+		return fmt.Errorf("could not replace compacted database: %w", err)
+	}
+	b.db, err = bbolt.Open(b.path, 0600, bbolt.DefaultOptions)
+	if err != nil {
+		return fmt.Errorf("could not open store from %s: %w", b.path, err)
 	}
 	return nil
 }
