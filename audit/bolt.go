@@ -192,18 +192,24 @@ func (b *Bolt) removeOverLimit(maxRecords int) error {
 	}
 	defer func() {
 		err = tx.Rollback()
-		if !errors.Is(err, bbolt.ErrTxClosed) {
+		if err != nil && !errors.Is(err, bbolt.ErrTxClosed) {
 			b.logger.Infof("could not rollback transaction: %v", err)
 		}
 	}()
 	bucket := tx.Bucket([]byte(logBucket))
 	c := bucket.Cursor()
 	if diff := bucket.Stats().KeyN - maxRecords; diff > 0 {
-		for ; diff > 0; diff-- {
+		var key []byte
+		for key, _ = c.First(); key != nil && diff > 0; key, _ = c.Next() {
 			if err := c.Delete(); err != nil {
 				return fmt.Errorf("could not delete key: %w", err)
 			}
+			diff--
 		}
+	}
+	err = tx.Commit()
+	if err != nil {
+		return fmt.Errorf("could not commit transaction: %w", err)
 	}
 	return nil
 }
@@ -217,7 +223,7 @@ func (b *Bolt) removeBefore(stamp time.Time) error {
 	}
 	defer func() {
 		err = tx.Rollback()
-		if !errors.Is(err, bbolt.ErrTxClosed) {
+		if err != nil && !errors.Is(err, bbolt.ErrTxClosed) {
 			b.logger.Infof("could not rollback transaction: %v", err)
 		}
 	}()
