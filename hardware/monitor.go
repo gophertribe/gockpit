@@ -2,6 +2,8 @@ package hardware
 
 import (
 	"context"
+	"fmt"
+	"github.com/nakabonne/tstorage"
 	"sync"
 	"time"
 
@@ -9,20 +11,16 @@ import (
 
 	"github.com/mklimuk/gockpit"
 
-	"github.com/mklimuk/gockpit/metrics"
-
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/disk"
 	"github.com/shirou/gopsutil/host"
 	"github.com/shirou/gopsutil/mem"
 )
 
+var _ MetricsProvider = &Monitor{}
+
 type Metrics struct {
 	Namespace string `json:"namespace"`
-}
-
-type MetricsStore interface {
-	Publish(context.Context, metrics.Metrics) error
 }
 
 type Publisher interface {
@@ -34,19 +32,47 @@ type Logger interface {
 }
 
 type Monitor struct {
-	mx     sync.Mutex
-	state  map[string]interface{}
-	logger Logger
+	mx      sync.Mutex
+	state   map[string]interface{}
+	logger  Logger
+	metrics tstorage.Storage
 }
 
-func NewMonitor(logger gockpit.Logger) *Monitor {
-	return &Monitor{
-		state:  make(map[string]interface{}),
-		logger: logger,
+func NewMonitor(metricsPath string, retention time.Duration, logger gockpit.Logger) (*Monitor, error) {
+	metrics, err := tstorage.NewStorage(tstorage.WithDataPath(metricsPath), tstorage.WithTimestampPrecision(tstorage.Milliseconds), tstorage.WithRetention(retention))
+	if err != nil {
+		return nil, fmt.Errorf("could not create hardware metrics storage: %w", err)
 	}
+	return &Monitor{
+		state:   make(map[string]interface{}),
+		logger:  logger,
+		metrics: metrics,
+	}, nil
 }
 
-func (hw *Monitor) Watch(ctx context.Context, mtr MetricsStore, pub Publisher, errs state.ErrorCollector, logger gockpit.Logger, wg *sync.WaitGroup) {
+var metricNames = []string{"mem_total", "mem_used", "mem_percent", "cpu_percent", "disk_percent", "uptime", "boottime"}
+
+func (hw *Monitor) GetMetrics(from, to int64) (map[string][]*tstorage.DataPoint, error) {
+	res := map[string][]*tstorage.DataPoint{}
+	for _, m := range metricNames {
+		points, err := hw.GetMetric(m, nil, from, to)
+		if err != nil {
+			return nil, fmt.Errorf("could not get metric %s: %w", m, err)
+		}
+		res[m] = points
+	}
+	return res, nil
+}
+
+func (hw *Monitor) GetMetric(metric string, labels []tstorage.Label, from, to int64) ([]*tstorage.DataPoint, error) {
+	points, err := hw.metrics.Select(metric, labels, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("could not select metric: %w", err)
+	}
+	return points, nil
+}
+
+func (hw *Monitor) Watch(ctx context.Context, pub Publisher, errs state.ErrorCollector, logger gockpit.Logger, wg *sync.WaitGroup) {
 	wg.Add(1)
 	go func() {
 		wg.Done()
@@ -55,7 +81,7 @@ func (hw *Monitor) Watch(ctx context.Context, mtr MetricsStore, pub Publisher, e
 		for {
 			select {
 			case <-ticker.C:
-				hw.updateState(ctx, mtr, pub, errs, logger)
+				hw.updateState(ctx, pub, errs, logger)
 			case <-ctx.Done():
 				hw.logger.Info("stopping hardware monitor watch routine")
 				return
@@ -64,7 +90,7 @@ func (hw *Monitor) Watch(ctx context.Context, mtr MetricsStore, pub Publisher, e
 	}()
 }
 
-func (hw *Monitor) updateState(ctx context.Context, mtr MetricsStore, pub Publisher, errs state.ErrorCollector, logger gockpit.Logger) {
+func (hw *Monitor) updateState(ctx context.Context, pub Publisher, errs state.ErrorCollector, logger gockpit.Logger) {
 	hw.mx.Lock()
 	defer hw.mx.Unlock()
 	var cancel context.CancelFunc
@@ -85,10 +111,18 @@ func (hw *Monitor) updateState(ctx context.Context, mtr MetricsStore, pub Publis
 	_ = errs.Collect(ctx, "hw", "host_read", "could not read hardware info", err, state.Clearable)
 	hw.state["uptime"] = info.Uptime
 	hw.state["boottime"] = info.BootTime
-	if mtr != nil {
-		err = mtr.Publish(ctx, metrics.New("hw", hw.state, nil))
-		_ = errs.Collect(ctx, "hw", "metrics", "error publishing metrics", err, state.Clearable)
-	}
+	now := time.Now().UnixMilli()
+	err = hw.metrics.InsertRows(
+		[]tstorage.Row{
+			{Metric: "mem_total", DataPoint: tstorage.DataPoint{Timestamp: now, Value: float64(memory.Total)}},
+			{Metric: "mem_used", DataPoint: tstorage.DataPoint{Timestamp: now, Value: float64(memory.Used)}},
+			{Metric: "mem_percent", DataPoint: tstorage.DataPoint{Timestamp: now, Value: memory.UsedPercent}},
+			{Metric: "cpu_percent", DataPoint: tstorage.DataPoint{Timestamp: now, Value: processor[0]}},
+			{Metric: "disk_percent", DataPoint: tstorage.DataPoint{Timestamp: now, Value: diskUsage.UsedPercent}},
+			{Metric: "uptime", DataPoint: tstorage.DataPoint{Timestamp: now, Value: float64(info.Uptime)}},
+			{Metric: "boottime", DataPoint: tstorage.DataPoint{Timestamp: now, Value: float64(info.BootTime)}},
+		})
+	_ = errs.Collect(ctx, "hw", "metrics", "error publishing metrics", err, state.Clearable)
 	err = pub.Publish(ctx, gockpit.Event{
 		Namespace: "hw",
 		Event:     "metrics",

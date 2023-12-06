@@ -2,10 +2,9 @@ package state
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"testing"
-
-	"github.com/mklimuk/gockpit/audit"
 
 	"github.com/mklimuk/gockpit/log"
 	"github.com/stretchr/testify/assert"
@@ -13,8 +12,9 @@ import (
 
 func TestErrors(t *testing.T) {
 	var buf bytes.Buffer
-	errs := NewErrors(log.NewCombinedLogger(audit.LevelInfo, &buf, audit.Stdout{}, &wsDummy{}))
-	_ = errs.Collect("ns", "code", "dummy error", fmt.Errorf("dummy"), true)
+	ctx := context.TODO()
+	errs := NewErrors(log.NewLeveledLogger(&buf))
+	_ = errs.Collect(ctx, "ns", "code", "dummy error", fmt.Errorf("dummy"))
 	if assert.Len(t, errs.errs, 1) {
 		assert.Len(t, errs.errs["ns"], 1)
 	}

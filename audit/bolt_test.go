@@ -50,6 +50,11 @@ type out struct {
 	t        require.TestingT
 }
 
+func (o *out) Info(msg string) {
+	_, err := fmt.Fprint(&o.buf, msg)
+	require.NoError(o.t, err)
+}
+
 func (o *out) Infof(msg string, args ...interface{}) {
 	_, err := fmt.Fprintf(&o.buf, msg, args...)
 	require.NoError(o.t, err)
