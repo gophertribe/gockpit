@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"sync"
@@ -76,7 +77,7 @@ func NewPublisher(logger Logger) *Publisher {
 	return e
 }
 
-//SubscribeHandler streams published events to websockets
+// SubscribeHandler streams published events to websockets
 func (pub *Publisher) SubscribeHandler(ctx context.Context) http.HandlerFunc {
 	pub.enabled = true
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -101,9 +102,13 @@ func (pub *Publisher) SubscribeHandler(ctx context.Context) http.HandlerFunc {
 			for {
 				msg, reader, err := ws.Reader(ctx)
 				if err != nil {
-					if status := websocket.CloseStatus(err); status != -1 {
-						pub.logger.Infof("websocket from %s closed with status %d", addr, status)
-					} else {
+					var ce websocket.CloseError
+					switch {
+					case errors.As(err, &ce):
+						pub.logger.Infof("websocket from %s closed with status (%d) %s", addr, ce.Code, ce.Reason)
+					case errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled):
+						pub.logger.Infof("context is no longer valid: %v", err)
+					default:
 						pub.logger.Infof("websocket error: %v", err)
 					}
 					pub.mx.Lock()
@@ -159,11 +164,12 @@ func (pub *Publisher) write(ctx context.Context, peer string, conn *Conn, msg in
 	}
 	err := wsjson.Write(ctx, conn.ws, msg)
 	if err != nil {
-		status := websocket.CloseStatus(err)
-		if status != websocket.StatusGoingAway && status != websocket.StatusNormalClosure {
-			pub.logger.Infof("could not write state to websocket; closing connection from peer %s: %d", peer, status)
+		var wserr websocket.CloseError
+		if errors.As(err, &wserr) {
+			pub.logger.Infof("could not write state to websocket; closing connection from peer %s: %d", peer, wserr.Code)
+			delete(pub.connections, peer)
+			return
 		}
-		pub.logger.Debugf("closing peer connection from peer %s: %d", peer, status)
 		_ = conn.ws.Close(websocket.StatusAbnormalClosure, "error writing state")
 		delete(pub.connections, peer)
 		return

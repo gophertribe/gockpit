@@ -15,6 +15,7 @@ require (
 	github.com/gosnmp/gosnmp v1.32.0
 	github.com/influxdata/influxdb-client-go/v2 v2.4.0
 	github.com/morikuni/aec v1.0.0 // indirect
+	github.com/nakabonne/tstorage v0.3.6
 	github.com/shirou/gopsutil v3.21.7+incompatible
 	github.com/spf13/afero v1.6.0
 	github.com/stretchr/testify v1.7.0
