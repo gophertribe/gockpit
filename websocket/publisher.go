@@ -89,7 +89,9 @@ func (pub *Publisher) SubscribeHandler(ctx context.Context) http.HandlerFunc {
 			}{err.Error()}, pub.logger)
 			return
 		}
+		pub.mx.Lock()
 		prev := pub.connections[r.RemoteAddr]
+		pub.mx.Unlock()
 		if prev != nil {
 			err = prev.ws.Close(websocket.StatusGoingAway, "received another connection from peer")
 			if err != nil {
