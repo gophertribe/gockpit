@@ -14,6 +14,8 @@ import (
 	"github.com/spf13/afero"
 )
 
+var _ metrics.Store = &Store{}
+
 type line string
 
 type Store struct {
@@ -23,7 +25,6 @@ type Store struct {
 	bucket    string
 	batchSize int
 	batch     []line
-	logger    Logger
 }
 
 func (s *Store) Publish(ctx context.Context, m metrics.Metrics) error {
@@ -45,7 +46,7 @@ type Options struct {
 	Retry           int
 }
 
-func NewStore(addr, org, bucket, token string, batchSize int, logger Logger) *Store {
+func NewStore(addr, org, bucket, token string, batchSize int) *Store {
 	return &Store{
 		client: &Client{
 			addr:       addr,
@@ -55,7 +56,6 @@ func NewStore(addr, org, bucket, token string, batchSize int, logger Logger) *St
 		org:       org,
 		bucket:    bucket,
 		batchSize: batchSize,
-		logger:    logger,
 	}
 }
 
@@ -110,7 +110,7 @@ func (s *Store) Setup(ctx context.Context, username, password string, retentionP
 	if err != nil {
 		return fmt.Errorf("could not save influx token [%s]: %w", token, err)
 	}
-	s.logger.Infof("influx token saved to %s", tokenLocation)
+	//s.logger.Infof("influx token saved to %s", tokenLocation)
 	return nil
 }
 
@@ -119,7 +119,7 @@ func (s *Store) Close() {
 }
 
 func (s *Store) SaveMeasurement(ctx context.Context, measurement string, fields map[string]interface{}, tags map[string]string) error {
-	return s.client.WriteMeasurement(ctx, s.org, s.bucket, measurement, fields, tags, time.Now(), s.logger)
+	return s.client.WriteMeasurement(ctx, s.org, s.bucket, measurement, fields, tags, time.Now())
 }
 
 func ReadToken(tokenLocation string, fs afero.Fs) (string, error) {

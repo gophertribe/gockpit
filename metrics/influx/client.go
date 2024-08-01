@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"strconv"
@@ -138,7 +139,7 @@ func (c *Client) SignOut() {
 	// do nothing
 }
 
-func (c *Client) WriteMeasurement(_ context.Context, org, bucket, measurement string, fields map[string]interface{}, tags map[string]string, timestamp time.Time, logger Logger) error {
+func (c *Client) WriteMeasurement(_ context.Context, org, bucket, measurement string, fields map[string]interface{}, tags map[string]string, timestamp time.Time) error {
 	var builder strings.Builder
 	builder.WriteString(measurement)
 	for key, val := range tags {
@@ -162,7 +163,7 @@ func (c *Client) WriteMeasurement(_ context.Context, org, bucket, measurement st
 	builder.WriteString(" ")
 	builder.WriteString(strconv.Itoa(int(timestamp.UnixNano())))
 	builder.WriteString("\n")
-	logger.Debugf("writing protocol line: %s", builder.String())
+	slog.Debug("writing influx protocol line", "line", builder.String())
 	req, _ := http.NewRequest(http.MethodPost, c.addr+"/api/v2/write", bytes.NewBufferString(builder.String()))
 	q := req.URL.Query()
 	q.Add("bucket", bucket)

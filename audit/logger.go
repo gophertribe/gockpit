@@ -8,4 +8,5 @@ type Logger interface {
 	GetPage(page, pageSize int, filters ...Filter) ([]Event, int, error)
 	SetError(ctx context.Context, ns, code string, err error)
 	ClearError(ctx context.Context, ns, code string, err error)
+	Close() error
 }
