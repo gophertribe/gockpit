@@ -14,7 +14,7 @@ import (
 	"github.com/spf13/afero"
 )
 
-var _ metrics.Store = &Store{}
+var _ metrics.Publisher = &Store{}
 
 type line string
 
