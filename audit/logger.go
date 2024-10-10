@@ -9,4 +9,5 @@ type Logger interface {
 	SetError(ctx context.Context, ns, code string, err error)
 	ClearError(ctx context.Context, ns, code string, err error)
 	RegisterListener(ns, msg string, listener func(*Event))
+	Close() error
 }

@@ -2,6 +2,7 @@ package grafana
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -37,7 +38,7 @@ func FrontendProxy(prefix string, dashURL *url.URL) *httputil.ReverseProxy {
 	}
 }
 
-func WebsocketProxy(ctx context.Context, dashURL *url.URL, logger gockpit.Logger) http.HandlerFunc {
+func WebsocketProxy(ctx context.Context, dashURL *url.URL) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		in, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 			InsecureSkipVerify: true,
@@ -62,20 +63,20 @@ func WebsocketProxy(ctx context.Context, dashURL *url.URL, logger gockpit.Logger
 				if err != nil {
 					status := websocket.CloseStatus(err)
 					if status != -1 {
-						logger.Infof("websocket closed with status %d", status)
+						slog.Info("websocket closed with status", "status", status)
 					} else {
-						logger.Infof("websocket error: %v", err)
+						slog.Info("websocket error", "err", err)
 						status = websocket.StatusAbnormalClosure
 					}
 					err = out.Close(status, "upstream closed")
 					if err != nil {
-						logger.Infof("could not close proxy websocket: %v", err)
+						slog.Info("could not close proxy websocket", "err", err)
 					}
 					return
 				}
 				err = out.Write(ctx, msgType, msg)
 				if err != nil {
-					logger.Infof("could not write message: %v", err)
+					slog.Info("could not write message", "err", err)
 				}
 			}
 		}()
@@ -86,20 +87,20 @@ func WebsocketProxy(ctx context.Context, dashURL *url.URL, logger gockpit.Logger
 				if err != nil {
 					status := websocket.CloseStatus(err)
 					if status != -1 {
-						logger.Infof("target websocket closed with status %d", status)
+						slog.Info("target websocket closed with status", "status", status)
 					} else {
-						logger.Infof("target websocket error: %v", err)
+						slog.Info("target websocket error", "err", err)
 						status = websocket.StatusAbnormalClosure
 					}
 					err = in.Close(status, "downstream closed")
 					if err != nil {
-						logger.Infof("could not close proxy websocket: %v", err)
+						slog.Info("could not close proxy websocket", "err", err)
 					}
 					return
 				}
 				err = in.Write(ctx, msgType, msg)
 				if err != nil {
-					logger.Infof("could not write message from proxy: %v", err)
+					slog.Info("could not write message from proxy", "err", err)
 				}
 			}
 		}()

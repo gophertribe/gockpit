@@ -6,6 +6,10 @@ type Provider interface {
 	GetMetrics(context.Context) (fields map[string]interface{}, tags map[string]string)
 }
 
+type Publisher interface {
+	Publish(context.Context, Metrics) error
+}
+
 type Metrics struct {
 	Namespace string                 `json:"namespace"`
 	Event     string                 `json:"event"`

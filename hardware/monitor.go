@@ -2,6 +2,7 @@ package hardware
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -13,6 +14,15 @@ import (
 	"github.com/shirou/gopsutil/disk"
 	"github.com/shirou/gopsutil/host"
 	"github.com/shirou/gopsutil/mem"
+)
+
+const (
+	namespace       = "hw"
+	ErrCodeMemRead  = "HW01:mem_read"
+	ErrCodeCpuRead  = "HW02:cpu_read"
+	ErrCodeDiskRead = "HW03:disk_read"
+	ErrCodeHostRead = "HW04:host_read"
+	ErrCodeMetrics  = "HW05:metrics"
 )
 
 type Metrics struct {
@@ -48,11 +58,11 @@ type Monitor struct {
 	metrics MetricsWriter
 }
 
-func NewMonitor(mw MetricsWriter, logger gockpit.Logger) (*Monitor, error) {
+func NewMonitor(mw MetricsWriter, logger gockpit.Logger) *Monitor {
 	return &Monitor{
 		logger:  logger,
 		metrics: mw,
-	}, nil
+	}
 }
 
 func (hw *Monitor) Watch(ctx context.Context, pub Publisher, errs state.ErrorCollector, logger gockpit.Logger, wg *sync.WaitGroup) {
@@ -64,7 +74,7 @@ func (hw *Monitor) Watch(ctx context.Context, pub Publisher, errs state.ErrorCol
 		for {
 			select {
 			case <-ticker.C:
-				hw.updateState(ctx, pub, errs, logger)
+				hw.updateState(ctx, pub, errs)
 			case <-ctx.Done():
 				hw.logger.Info("stopping hardware monitor watch routine")
 				return
@@ -73,35 +83,35 @@ func (hw *Monitor) Watch(ctx context.Context, pub Publisher, errs state.ErrorCol
 	}()
 }
 
-func (hw *Monitor) updateState(ctx context.Context, pub Publisher, errs state.ErrorCollector, logger gockpit.Logger) {
+func (hw *Monitor) updateState(ctx context.Context, pub Publisher, errs state.ErrorCollector) {
 	hw.mx.Lock()
 	defer hw.mx.Unlock()
 	var cancel context.CancelFunc
 	ctx, cancel = context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	memory, err := mem.VirtualMemoryWithContext(ctx)
-	_ = errs.Collect(ctx, "hw", "mem_read", "could not read memory stats", err, state.Clearable)
+	_ = errs.Collect(ctx, namespace, ErrCodeMemRead, "could not read memory stats", err, state.Clearable)
 	hw.state.MemTotal = memory.Total
 	hw.state.MemUsed = memory.Used
 	hw.state.MemPercent = memory.UsedPercent
 	processor, err := cpu.PercentWithContext(ctx, 0, false)
-	_ = errs.Collect(ctx, "hw", "cpu_read", "could not read cpu stats", err, state.Clearable)
+	_ = errs.Collect(ctx, namespace, ErrCodeCpuRead, "could not read cpu stats", err, state.Clearable)
 	hw.state.CpuPercent = processor[0]
 	diskUsage, err := disk.UsageWithContext(ctx, "/")
-	_ = errs.Collect(ctx, "hw", "disk_read", "could not read disk usage stats", err, state.Clearable)
+	_ = errs.Collect(ctx, namespace, ErrCodeDiskRead, "could not read disk usage stats", err, state.Clearable)
 	hw.state.DiskPercent = diskUsage.UsedPercent
 	info, err := host.InfoWithContext(ctx)
-	_ = errs.Collect(ctx, "hw", "host_read", "could not read hardware info", err, state.Clearable)
+	_ = errs.Collect(ctx, namespace, ErrCodeHostRead, "could not read hardware info", err, state.Clearable)
 	hw.state.Uptime = info.Uptime
 	hw.state.Boottime = info.BootTime
 	err = hw.metrics.HardwareStateUpdate(hw.state)
 	_ = errs.Collect(ctx, "hw", "metrics", "error publishing metrics", err, state.Clearable)
 	err = pub.Publish(ctx, gockpit.Event{
-		Namespace: "hw",
+		Namespace: namespace,
 		Event:     "metrics",
 		Payload:   hw.state,
 	})
 	if err != nil {
-		logger.Errorf("could not publish hardware metrics: %w", err)
+		slog.Error("could not publish hardware metrics", "err", err)
 	}
 }

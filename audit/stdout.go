@@ -15,6 +15,10 @@ func (s Stdout) RegisterListener(ns, msg string, listener func(*Event)) {
 	// TODO: do we need this here?
 }
 
+func (s Stdout) Close() error {
+	return nil
+}
+
 func (s Stdout) SetError(ctx context.Context, ns, code string, err error) {
 	s.Error(ctx, ns, code, err)
 }

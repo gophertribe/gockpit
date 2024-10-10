@@ -5,11 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"time"
-
-	"github.com/mklimuk/gockpit"
 )
 
 type Grafana struct {
@@ -121,7 +120,7 @@ type ResponseDatasourceQuery struct {
 	Results map[string]QueryResult `json:"results"`
 }
 
-func (g *Grafana) SetupInfluxDatasource(ctx context.Context, name string, influxURL, bucket, org, token string, logger gockpit.Logger) error {
+func (g *Grafana) SetupInfluxDatasource(ctx context.Context, name string, influxURL, bucket, org, token string) error {
 	req, err := http.NewRequest(http.MethodGet, g.baseURL+"/api/datasources", nil)
 	if err != nil {
 		return err
@@ -157,7 +156,7 @@ func (g *Grafana) SetupInfluxDatasource(ctx context.Context, name string, influx
 	if err != nil {
 		return fmt.Errorf("could not create datasource: %w", err)
 	}
-	logger.Infof("created datasource: %s", influxDs.Message)
+	slog.Info("created grafana datasource", "datasource", influxDs.Message)
 	influxDs.Datasource.Url = influxURL
 	influxDs.Datasource.JsonData.DefaultBucket = bucket
 	influxDs.Datasource.JsonData.Version = "Flux"
@@ -170,7 +169,7 @@ func (g *Grafana) SetupInfluxDatasource(ctx context.Context, name string, influx
 	if err != nil {
 		return fmt.Errorf("could not update datasource: %w", err)
 	}
-	logger.Infof("updated datasource: %s", influxDs.Message)
+	slog.Info("updated grafana datasource", "datasource", influxDs.Message)
 	_, err = g.QueryDatasource(ctx, RequestDatasourceQuery{
 		Queries: []DatasourceQuery{{DatasourceId: influxDs.Datasource.Id, RefId: "test", Query: "buckets()", IntervalMs: 60000, MaxDataPoints: 423}},
 		Range: DateRange{
