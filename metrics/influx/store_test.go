@@ -89,7 +89,7 @@ func (s *Suite) SetupSuite() {
 }
 
 func (s *Suite) TearDownSuite() {
-	err := s.cli.ContainerStop(s.ctx, s.containerID, nil)
+	err := s.cli.ContainerStop(s.ctx, s.containerID, container.StopOptions{})
 	err = <-s.ret
 	s.Assert().NoError(err)
 	s.cancel()
@@ -104,7 +104,7 @@ func (s *Suite) testSetup(t *testing.T) {
 	tokenPath := "/tmp/token"
 	fs := afero.NewMemMapFs()
 	require.NoError(t, fs.Mkdir("/tmp", 0666))
-	store := NewStore("http://localhost:8086", "satsys", "hae", "", 32, nil)
+	store := NewStore("http://localhost:8086", "satsys", "hae", "", 32)
 	// check there is no token
 	token, err := ReadToken(tokenPath, fs)
 	require.NoError(t, err)
@@ -134,7 +134,7 @@ func (s *Suite) testSetup(t *testing.T) {
 }
 
 func (s *Suite) TestWrite() {
-	store := NewStore("http://localhost:8086", "satsys", "hae", s.token, 32, nil)
+	store := NewStore("http://localhost:8086", "satsys", "hae", s.token, 32)
 	require.NoError(s.T(), store.Publish(context.Background(), metrics.Metrics{
 		Namespace: "test",
 		Event:     "measure",
