@@ -11,6 +11,10 @@ type Stdout struct {
 	writer io.Writer
 }
 
+func (s Stdout) RegisterListener(ns, msg string, listener func(*Event)) {
+	// TODO: do we need this here?
+}
+
 func (s Stdout) SetError(ctx context.Context, ns, code string, err error) {
 	s.Error(ctx, ns, code, err)
 }

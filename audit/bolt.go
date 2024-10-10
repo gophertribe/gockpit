@@ -45,18 +45,20 @@ type StdLogger interface {
 }
 
 type Bolt struct {
-	mx     sync.Mutex
-	path   string
-	pub    Publisher
-	logger StdLogger
-	db     *bbolt.DB
+	mx        sync.Mutex
+	path      string
+	pub       Publisher
+	logger    StdLogger
+	db        *bbolt.DB
+	listeners map[string]map[string]func(*Event)
 }
 
 func NewBolt(path string, pub Publisher, logger StdLogger) (*Bolt, error) {
 	b := &Bolt{
-		path:   path,
-		pub:    pub,
-		logger: logger,
+		path:      path,
+		pub:       pub,
+		logger:    logger,
+		listeners: map[string]map[string]func(*Event){},
 	}
 	var err error
 	b.db, err = bbolt.Open(path, 0600, bbolt.DefaultOptions)
@@ -77,6 +79,17 @@ func NewBolt(path string, pub Publisher, logger StdLogger) (*Bolt, error) {
 		return b, fmt.Errorf("could not commit transaction: %w", err)
 	}
 	return b, nil
+}
+
+func (b *Bolt) RegisterListener(ns, msg string, listener func(*Event)) {
+	b.mx.Lock()
+	defer b.mx.Unlock()
+	namespace := b.listeners[ns]
+	if namespace == nil {
+		namespace = map[string]func(*Event){}
+		b.listeners[ns] = namespace
+	}
+	namespace[msg] = listener
 }
 
 func (b *Bolt) Close() error {
@@ -120,6 +133,12 @@ func (b *Bolt) Log(ctx context.Context, l *Event) error {
 	err = tx.Commit()
 	if err != nil {
 		return fmt.Errorf("could not commit transaction: %w", err)
+	}
+	ns := b.listeners[l.Namespace]
+	if ns != nil {
+		if listener, ok := ns[l.Event]; ok {
+			listener(l)
+		}
 	}
 	return b.pub.Publish(ctx, l)
 }
