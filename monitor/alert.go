@@ -9,8 +9,17 @@ type Time struct {
 	time.Time
 }
 
-func (t Time) MarshalJSON() ([]byte, error) {
+func (t *Time) MarshalJSON() ([]byte, error) {
 	return json.Marshal(t.Unix())
+}
+
+func (t *Time) UnmarshalJSON(data []byte) error {
+	var unix int64
+	if err := json.Unmarshal(data, &unix); err != nil {
+		return err
+	}
+	t.Time = time.Unix(unix, 0)
+	return nil
 }
 
 type Alert struct {
