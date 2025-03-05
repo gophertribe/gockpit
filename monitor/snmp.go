@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/gophertribe/snmp"
 	"github.com/gosnmp/gosnmp"
+
+	"github.com/gophertribe/snmp"
 )
 
 type SNMP struct {
@@ -60,7 +61,9 @@ func (s *SNMP) Listen() error {
 }
 
 func (s *SNMP) Close() {
-	s.server.Shutdown()
+	if s.server != nil {
+		s.server.Shutdown()
+	}
 }
 
 func (s *SNMP) SendTrap(oid string, valType gosnmp.Asn1BER, val interface{}) error {
