@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -19,12 +20,6 @@ import (
 const (
 	JSONContentType = "application/json"
 )
-
-type Logger interface {
-	Errorf(string, ...interface{})
-	Infof(string, ...interface{})
-	Debugf(string, ...interface{})
-}
 
 type Time struct {
 	time.Time
@@ -51,7 +46,6 @@ func NewConn(peer string, conn *websocket.Conn) *Conn {
 type Publisher struct {
 	mx          sync.Mutex
 	connections map[string]*Conn
-	logger      Logger
 	enabled     bool
 }
 
@@ -69,10 +63,9 @@ func (pub *Publisher) Publish(ctx context.Context, msg interface{}) error {
 	return nil
 }
 
-func NewPublisher(logger Logger) *Publisher {
+func NewPublisher() *Publisher {
 	e := &Publisher{
 		connections: map[string]*Conn{},
-		logger:      logger,
 	}
 	return e
 }
@@ -87,7 +80,7 @@ func (pub *Publisher) SubscribeHandler(ctx context.Context) http.HandlerFunc {
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, struct {
 				Error string `json:"error"`
-			}{err.Error()}, pub.logger)
+			}{err.Error()})
 			return
 		}
 		pub.mx.Lock()
@@ -96,7 +89,7 @@ func (pub *Publisher) SubscribeHandler(ctx context.Context) http.HandlerFunc {
 		if prev != nil {
 			err = prev.ws.Close(websocket.StatusGoingAway, "received another connection from peer")
 			if err != nil {
-				pub.logger.Infof("could not close previous connection from peer %s", r.RemoteAddr)
+				slog.Info("could not close previous connection from peer", "peer", r.RemoteAddr, "error", err)
 			}
 		}
 		conn := NewConn(r.RemoteAddr, ws)
@@ -107,11 +100,11 @@ func (pub *Publisher) SubscribeHandler(ctx context.Context) http.HandlerFunc {
 					var ce websocket.CloseError
 					switch {
 					case errors.As(err, &ce):
-						pub.logger.Infof("websocket from %s closed with status (%d) %s", addr, ce.Code, ce.Reason)
+						slog.Info("websocket from peer closed", "peer", addr, "status", ce.Code, "reason", ce.Reason)
 					case errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled):
-						pub.logger.Infof("context is no longer valid: %v", err)
+						slog.Info("context is no longer valid", "error", err)
 					default:
-						pub.logger.Infof("websocket error: %v", err)
+						slog.Info("websocket error", "error", err)
 					}
 					pub.mx.Lock()
 					delete(pub.connections, addr)
@@ -119,12 +112,13 @@ func (pub *Publisher) SubscribeHandler(ctx context.Context) http.HandlerFunc {
 					return
 				}
 				if msg == websocket.MessageBinary {
-					pub.logger.Infof("received binary message from %s", addr)
+					slog.Info("received binary message from peer", "peer", addr)
 					continue
 				}
 				var buf bytes.Buffer
 				_, _ = io.Copy(&buf, reader)
-				pub.logger.Infof("received message from %s: %s", addr, buf.String())
+				slog.Info("received message from peer", "peer", addr)
+				slog.Debug("message from peer", "peer", addr, "msg", buf.String())
 			}
 		}(r.RemoteAddr)
 		pub.mx.Lock()
@@ -133,18 +127,18 @@ func (pub *Publisher) SubscribeHandler(ctx context.Context) http.HandlerFunc {
 	}
 }
 
-func writeJSON(w http.ResponseWriter, status int, body interface{}, logger Logger) {
+func writeJSON(w http.ResponseWriter, status int, body interface{}) {
 	var buf bytes.Buffer
 	err := json.NewEncoder(&buf).Encode(body)
 	if err != nil {
-		logger.Errorf("could not encode body: %w", err)
+		slog.Error("could not encode body", "error", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(err.Error()))
 	}
 	w.WriteHeader(status)
 	_, err = w.Write(buf.Bytes())
 	if err != nil {
-		logger.Errorf("could not write response: %w", err)
+		slog.Error("could not write response", "error", err)
 	}
 }
 
@@ -168,7 +162,7 @@ func (pub *Publisher) write(ctx context.Context, peer string, conn *Conn, msg in
 	if err != nil {
 		var wserr websocket.CloseError
 		if errors.As(err, &wserr) {
-			pub.logger.Infof("could not write state to websocket; closing connection from peer %s: %d", peer, wserr.Code)
+			slog.Info("could not write state to websocket; closing connection from peer", "peer", peer, "code", wserr.Code)
 			delete(pub.connections, peer)
 			return
 		}
@@ -176,5 +170,5 @@ func (pub *Publisher) write(ctx context.Context, peer string, conn *Conn, msg in
 		delete(pub.connections, peer)
 		return
 	}
-	pub.logger.Debugf("wrote message to peer %s", peer)
+	slog.Debug("wrote message to peer", "peer", peer)
 }

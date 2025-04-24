@@ -3,6 +3,7 @@ package audit
 import (
 	"bytes"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
 )
@@ -13,11 +14,7 @@ type Reader interface {
 	GetPage(page, pageSize int, filters ...Filter) ([]Event, int, error)
 }
 
-type ErrorLogger interface {
-	Errorf(string, ...interface{})
-}
-
-func GetLogsHandler(reader Reader, logger ErrorLogger) http.HandlerFunc {
+func GetLogsHandler(reader Reader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		page := 1
 		queryPage := r.URL.Query().Get("page")
@@ -28,7 +25,7 @@ func GetLogsHandler(reader Reader, logger ErrorLogger) http.HandlerFunc {
 				writeJSON(w, http.StatusBadRequest, handlerError{
 					Error:   "invalid `page` param format (expected integer)",
 					Details: err.Error(),
-				}, logger)
+				})
 				return
 			}
 		}
@@ -40,7 +37,7 @@ func GetLogsHandler(reader Reader, logger ErrorLogger) http.HandlerFunc {
 				writeJSON(w, http.StatusBadRequest, handlerError{
 					Error:   "invalid `size` param format (expected integer)",
 					Details: err.Error(),
-				}, logger)
+				})
 				return
 			}
 		}
@@ -49,21 +46,21 @@ func GetLogsHandler(reader Reader, logger ErrorLogger) http.HandlerFunc {
 			writeJSON(w, http.StatusInternalServerError, handlerError{
 				Error:   "unexpected error",
 				Details: err.Error(),
-			}, logger)
+			})
 			return
 		}
 		writeJSON(w, http.StatusOK, struct {
 			Logs  []Event `json:"logs"`
 			Total int     `json:"total"`
-		}{logs, total}, logger)
+		}{logs, total})
 	}
 }
 
-func writeJSON(w http.ResponseWriter, status int, body interface{}, logger ErrorLogger) {
+func writeJSON(w http.ResponseWriter, status int, body interface{}) {
 	var buf bytes.Buffer
 	err := json.NewEncoder(&buf).Encode(body)
 	if err != nil {
-		logger.Errorf("could not encode body: %w", err)
+		slog.Error("could not encode body", "error", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(err.Error()))
 	}
@@ -71,7 +68,7 @@ func writeJSON(w http.ResponseWriter, status int, body interface{}, logger Error
 	w.WriteHeader(status)
 	_, err = w.Write(buf.Bytes())
 	if err != nil {
-		logger.Errorf("could not write response: %w", err)
+		slog.Error("could not write response", "error", err)
 	}
 }
 
