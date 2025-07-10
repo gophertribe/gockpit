@@ -119,7 +119,7 @@ type DashboardStructure struct {
 					Id    int    `json:"id"`
 					Text  string `json:"text"`
 					To    string `json:"to"`
-					Type  int    `json:"type"`
+					Type  any    `json:"type"`
 					Value string `json:"value,omitempty"`
 				} `json:"mappings,omitempty"`
 				Thresholds struct {

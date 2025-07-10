@@ -13,8 +13,8 @@ import (
 
 	"github.com/mklimuk/gockpit"
 
-	"nhooyr.io/websocket"
-	"nhooyr.io/websocket/wsjson"
+	"github.com/coder/websocket"
+	"github.com/coder/websocket/wsjson"
 )
 
 const (

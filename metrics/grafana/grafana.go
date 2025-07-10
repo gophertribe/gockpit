@@ -23,7 +23,7 @@ func New(addr string) *Grafana {
 			Timeout: 5 * time.Second,
 		},
 		baseURL:    addr,
-		dashboards: make(map[string]string),
+		dashboards: map[string]string{},
 	}
 }
 
@@ -320,13 +320,8 @@ func (g *Grafana) EnsureDashboard(ctx context.Context, id string, title string) 
 }
 
 func (g *Grafana) ImportDashboard(ctx context.Context, dash DashboardImport) (*DashboardImportResponse, error) {
-	d, err := ParseStructure(bytes.NewReader(dash.Dashboard))
-	if err != nil {
-		return nil, fmt.Errorf("could not parse dashboard structure: %w", err)
-	}
-	g.dashboards[d.Uid] = d.Title
 	var body bytes.Buffer
-	err = json.NewEncoder(&body).Encode(dash)
+	err := json.NewEncoder(&body).Encode(dash)
 	if err != nil {
 		return nil, fmt.Errorf("could not encode request: %w", err)
 	}
@@ -338,21 +333,32 @@ func (g *Grafana) ImportDashboard(ctx context.Context, dash DashboardImport) (*D
 	req.Header.Add("Accept", "application/json")
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("X-WEBAUTH-USER", "admin")
+
+	debug := slog.Default().Enabled(ctx, slog.LevelDebug)
+	if debug {
+		dump, _ := httputil.DumpRequest(req, true)
+		fmt.Println(string(dump))
+	}
 	res, err := g.htclient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("could not perform request: %w", err)
 	}
-	if res.StatusCode != http.StatusOK {
+	if res.StatusCode != http.StatusOK || debug {
 		dump, _ := httputil.DumpResponse(res, true)
 		fmt.Println(string(dump))
-		return nil, fmt.Errorf("unexpected status code; expecting %d got %d", http.StatusOK, res.StatusCode)
+		if res.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("unexpected status code; expecting %d got %d", http.StatusOK, res.StatusCode)
+		}
 	}
+
 	var dir DashboardImportResponse
 	defer func() { _ = res.Body.Close() }()
 	err = json.NewDecoder(res.Body).Decode(&dir)
 	if err != nil {
 		return nil, fmt.Errorf("could not decode import response: %w", err)
 	}
+	slog.Info("imported dashboard", "url", dir.ImportedUrl, "title", dir.Title)
+	g.dashboards[dir.ImportedUrl] = dir.Title
 	return &dir, nil
 }
 
