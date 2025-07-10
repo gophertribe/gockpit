@@ -11,8 +11,8 @@ import (
 
 	"github.com/mklimuk/gockpit"
 
-	"nhooyr.io/websocket"
-	"nhooyr.io/websocket/wsjson"
+	"github.com/coder/websocket"
+	"github.com/coder/websocket/wsjson"
 )
 
 const (
@@ -76,7 +76,7 @@ func NewPublisher(logger Logger) *Publisher {
 	return e
 }
 
-//SubscribeHandler streams published events to websockets
+// SubscribeHandler streams published events to websockets
 func (pub *Publisher) SubscribeHandler(ctx context.Context) http.HandlerFunc {
 	pub.enabled = true
 	return func(w http.ResponseWriter, r *http.Request) {
