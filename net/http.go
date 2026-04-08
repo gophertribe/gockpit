@@ -21,21 +21,33 @@ func GetInterfacesHandler(fs afero.Fs, path string, mainIf string) http.HandlerF
 		}
 		var res []WrappedInterfaceSettings
 		for _, i := range ifaces {
-			w := WrappedInterfaceSettings{
+			ws := WrappedInterfaceSettings{
 				IfaceName: i.IfaceName,
 				Mode:      int(i.Mode),
 				Metric:    i.Metric,
 			}
 			if i.IfaceName == mainIf {
-				w.Lan = true
+				ws.Lan = true
 			}
-			if len(i.Addr.IP) > 0 {
-				w.Addr = i.Addr.String()
+			for _, a := range i.Addrs {
+				wa := WrappedAddress{}
+				if len(a.Addr.IP) > 0 {
+					wa.Addr = a.Addr.String()
+				}
+				if len(a.Gateway) > 0 {
+					wa.Gateway = a.Gateway.String()
+				}
+				ws.Addrs = append(ws.Addrs, wa)
 			}
-			if len(i.Gateway) > 0 {
-				w.Gateway = i.Gateway.String()
+			if len(i.Addrs) > 0 {
+				if len(i.Addrs[0].Addr.IP) > 0 {
+					ws.Addr = i.Addrs[0].Addr.String()
+				}
+				if len(i.Addrs[0].Gateway) > 0 {
+					ws.Gateway = i.Addrs[0].Gateway.String()
+				}
 			}
-			res = append(res, w)
+			res = append(res, ws)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -57,16 +69,33 @@ func InterfacesUpdateHandler(fs afero.Fs, path string) http.HandlerFunc {
 			})
 			return
 		}
-		ifaces := make([]InterfaceSettings, len(req))
-		for i, r := range req {
-			ifaces[i] = InterfaceSettings{
-				IfaceName: r.IfaceName,
-				Mode:      IPConfig(r.Mode),
-				Metric:    r.Metric,
-				Gateway:   net.ParseIP(r.Gateway),
+		var ifaces []InterfaceSettings
+		for _, ri := range req {
+			iface := InterfaceSettings{
+				IfaceName: ri.IfaceName,
+				Mode:      IPConfig(ri.Mode),
+				Metric:    ri.Metric,
 			}
-			if r.Addr != "" {
-				ip, addr, err := net.ParseCIDR(r.Addr)
+			if len(ri.Addrs) > 0 {
+				for _, a := range ri.Addrs {
+					ia := InterfaceAddress{
+						Gateway: net.ParseIP(a.Gateway),
+					}
+					if a.Addr != "" {
+						ip, addr, err := net.ParseCIDR(a.Addr)
+						if err != nil {
+							w.WriteHeader(http.StatusBadRequest)
+							_ = enc.Encode(map[string]string{
+								"error": err.Error(),
+							})
+							return
+						}
+						ia.Addr = net.IPNet{IP: ip, Mask: addr.Mask}
+					}
+					iface.Addrs = append(iface.Addrs, ia)
+				}
+			} else if ri.Addr != "" {
+				ip, addr, err := net.ParseCIDR(ri.Addr)
 				if err != nil {
 					w.WriteHeader(http.StatusBadRequest)
 					_ = enc.Encode(map[string]string{
@@ -74,11 +103,12 @@ func InterfacesUpdateHandler(fs afero.Fs, path string) http.HandlerFunc {
 					})
 					return
 				}
-				ifaces[i].Addr = net.IPNet{
-					IP:   ip,
-					Mask: addr.Mask,
-				}
+				iface.Addrs = []InterfaceAddress{{
+					Addr:    net.IPNet{IP: ip, Mask: addr.Mask},
+					Gateway: net.ParseIP(ri.Gateway),
+				}}
 			}
+			ifaces = append(ifaces, iface)
 		}
 		err = WriteSettingsToFile(ifaces, fs, path)
 		if err != nil {

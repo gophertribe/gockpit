@@ -8,7 +8,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"text/template"
 
 	"github.com/spf13/afero"
 )
@@ -20,33 +19,74 @@ const (
 	IPConfigDHCP
 )
 
+type InterfaceAddress struct {
+	Addr    net.IPNet
+	Gateway net.IP
+}
+
 type InterfaceSettings struct {
 	IfaceName string
 	Mode      IPConfig
-	Addr      net.IPNet
-	Gateway   net.IP
+	Addrs     []InterfaceAddress
 	Metric    int
 }
 
+type WrappedAddress struct {
+	Addr    string `json:"addr,omitempty"`
+	Gateway string `json:"gw,omitempty"`
+}
+
 type WrappedInterfaceSettings struct {
-	IfaceName string `json:"name"`
-	Mode      int    `json:"mode"`
-	Addr      string `json:"addr,omitempty"`
-	Gateway   string `json:"gw,omitempty"`
-	Metric    int    `json:"metric"`
-	Lan       bool   `json:"lan"`
+	IfaceName string           `json:"name"`
+	Mode      int              `json:"mode"`
+	Addr      string           `json:"addr,omitempty"`
+	Gateway   string           `json:"gw,omitempty"`
+	Addrs     []WrappedAddress `json:"addrs,omitempty"`
+	Metric    int              `json:"metric"`
+	Lan       bool             `json:"lan"`
 }
 
 func (i InterfaceSettings) IsStatic() bool {
 	return i.Mode == IPConfigStatic
 }
 
-func WriteSettings(settings []InterfaceSettings, w io.Writer) error {
-	err := interfacesTpl.Execute(w, settings)
-	if err != nil {
-		return fmt.Errorf("could not execute template: %w", err)
+func (i InterfaceSettings) PrimaryAddr() net.IPNet {
+	if len(i.Addrs) > 0 {
+		return i.Addrs[0].Addr
+	}
+	return net.IPNet{}
+}
+
+func (i InterfaceSettings) PrimaryGateway() net.IP {
+	if len(i.Addrs) > 0 {
+		return i.Addrs[0].Gateway
 	}
 	return nil
+}
+
+func WriteSettings(settings []InterfaceSettings, w io.Writer) error {
+	var buf strings.Builder
+	buf.WriteString("\nsource /etc/network/interfaces.d/*\n\n# The loopback network interface\nauto lo\niface lo inet loopback\n")
+	for _, iface := range settings {
+		buf.WriteString(fmt.Sprintf("\n\nauto %s\n", iface.IfaceName))
+		if iface.IsStatic() {
+			for i, addr := range iface.Addrs {
+				if i > 0 {
+					buf.WriteString("\n")
+				}
+				buf.WriteString(fmt.Sprintf("iface %s inet static\naddress %s\n", iface.IfaceName, addr.Addr.String()))
+				if len(addr.Gateway) > 0 {
+					buf.WriteString(fmt.Sprintf("gateway %s\n", addr.Gateway.String()))
+				}
+				buf.WriteString(fmt.Sprintf("metric %d\n", iface.Metric))
+			}
+		} else {
+			buf.WriteString(fmt.Sprintf("iface %s inet dhcp\nmetric %d\n", iface.IfaceName, iface.Metric))
+		}
+	}
+	buf.WriteString("\n")
+	_, err := io.WriteString(w, buf.String())
+	return err
 }
 
 func WriteSettingsToFile(settings []InterfaceSettings, fs afero.Fs, path string) error {
@@ -67,103 +107,119 @@ func ReadSettingsFromFile(fs afero.Fs, path string) ([]InterfaceSettings, error)
 	return ReadSettings(file)
 }
 
+type parsedBlock struct {
+	ifaceName string
+	mode      IPConfig
+	addr      net.IPNet
+	gateway   net.IP
+	metric    int
+}
+
 func ReadSettings(file io.Reader) ([]InterfaceSettings, error) {
-	var res []InterfaceSettings
-	var current *InterfaceSettings
+	var blocks []parsedBlock
+	var current *parsedBlock
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		parts := strings.Split(scanner.Text(), " ")
-		// continue on empty lines
+		parts := strings.Fields(scanner.Text())
 		if len(parts) == 0 {
 			continue
 		}
 		switch parts[0] {
 		case "iface":
 			if current != nil {
-				res = append(res, *current)
+				blocks = append(blocks, *current)
 			}
 			if len(parts) < 4 {
+				current = nil
 				continue
 			}
 			switch parts[3] {
 			case "static":
-				current = &InterfaceSettings{IfaceName: parts[1], Mode: IPConfigStatic}
+				current = &parsedBlock{ifaceName: parts[1], mode: IPConfigStatic}
 			case "dhcp":
-				current = &InterfaceSettings{IfaceName: parts[1], Mode: IPConfigDHCP}
+				current = &parsedBlock{ifaceName: parts[1], mode: IPConfigDHCP}
+			default:
+				current = nil
 			}
 		case "address":
-			if current == nil {
-				continue
-			}
-			if len(parts) < 2 {
+			if current == nil || len(parts) < 2 {
 				continue
 			}
 			ip, network, err := net.ParseCIDR(parts[1])
-			var addr net.IPNet
 			if err == nil {
-				addr.IP = ip
-				addr.Mask = network.Mask
+				current.addr.IP = ip
+				current.addr.Mask = network.Mask
 			} else {
-				addr.IP = net.ParseIP(parts[1])
-				addr.Mask = addr.IP.DefaultMask()
+				current.addr.IP = net.ParseIP(parts[1])
+				if current.addr.IP != nil {
+					current.addr.Mask = current.addr.IP.DefaultMask()
+				}
 			}
-			current.Addr = addr
 		case "gateway":
-			if current == nil {
+			if current == nil || len(parts) < 2 {
 				continue
 			}
-			if len(parts) < 2 {
-				continue
-			}
-			current.Gateway = net.ParseIP(parts[1])
+			current.gateway = net.ParseIP(parts[1])
 		case "netmask":
-			if current == nil {
+			if current == nil || len(parts) < 2 {
 				continue
 			}
-			if len(parts) < 2 {
-				continue
+			maskIP := net.ParseIP(parts[1])
+			if maskIP != nil {
+				if v4 := maskIP.To4(); v4 != nil {
+					current.addr.Mask = net.IPMask(v4)
+				} else {
+					current.addr.Mask = net.IPMask(maskIP)
+				}
 			}
-			current.Addr.Mask = net.IPMask(net.ParseIP(parts[1]))
 		case "metric":
-			if current == nil {
-				continue
-			}
-			if len(parts) < 2 {
+			if current == nil || len(parts) < 2 {
 				continue
 			}
 			metric, err := strconv.Atoi(parts[1])
 			if err != nil {
-				return res, fmt.Errorf("could not parse metric value from %s: %w", parts[1], err)
+				return nil, fmt.Errorf("could not parse metric value from %s: %w", parts[1], err)
 			}
-			current.Metric = metric
+			current.metric = metric
 		default:
 			continue
 		}
 	}
 	if current != nil {
-		res = append(res, *current)
+		blocks = append(blocks, *current)
 	}
 	if err := scanner.Err(); err != nil {
-		return res, fmt.Errorf("could not scan input file: %w", err)
+		return nil, fmt.Errorf("could not scan input file: %w", err)
 	}
-	return res, nil
+
+	seen := make(map[string]int)
+	var result []InterfaceSettings
+	for _, b := range blocks {
+		if idx, ok := seen[b.ifaceName]; ok {
+			if len(b.addr.IP) > 0 {
+				result[idx].Addrs = append(result[idx].Addrs, InterfaceAddress{
+					Addr:    b.addr,
+					Gateway: b.gateway,
+				})
+			}
+			if b.metric > 0 && result[idx].Metric == 0 {
+				result[idx].Metric = b.metric
+			}
+		} else {
+			seen[b.ifaceName] = len(result)
+			iface := InterfaceSettings{
+				IfaceName: b.ifaceName,
+				Mode:      b.mode,
+				Metric:    b.metric,
+			}
+			if len(b.addr.IP) > 0 {
+				iface.Addrs = []InterfaceAddress{{
+					Addr:    b.addr,
+					Gateway: b.gateway,
+				}}
+			}
+			result = append(result, iface)
+		}
+	}
+	return result, nil
 }
-
-var interfacesTpl = template.Must(template.New("network/interfaces").Parse(networkInterfaces))
-
-const networkInterfaces = `
-source /etc/network/interfaces.d/*
-
-# The loopback network interface
-auto lo
-iface lo inet loopback
-
-{{ range . }}
-auto {{ .IfaceName }}
-{{ if .IsStatic }}iface {{ .IfaceName }} inet static
-address {{ .Addr }}
-{{ with .Gateway }}gateway {{ . }}{{end}}
-{{- else }}iface {{ .IfaceName }} inet dhcp{{ end }}
-metric {{ .Metric }}
-{{ end }}
-`
