@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"sync"
 	"time"
@@ -144,12 +145,16 @@ func writeJSON(w http.ResponseWriter, status int, body interface{}) {
 
 func (pub *Publisher) StatusHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		pub.mx.Lock()
+		conns := make(map[string]*Conn, len(pub.connections))
+		maps.Copy(conns, pub.connections)
+		pub.mx.Unlock()
 		gockpit.RenderJSON(w, http.StatusOK, struct {
 			Enabled     bool             `json:"enabled"`
 			Connections map[string]*Conn `json:"connections"`
 		}{
 			pub.enabled,
-			pub.connections,
+			conns,
 		})
 	}
 }
@@ -163,11 +168,12 @@ func (pub *Publisher) write(ctx context.Context, peer string, conn *Conn, msg in
 		var wserr websocket.CloseError
 		if errors.As(err, &wserr) {
 			slog.Info("could not write state to websocket; closing connection from peer", "peer", peer, "code", wserr.Code)
-			delete(pub.connections, peer)
-			return
+		} else {
+			_ = conn.ws.Close(websocket.StatusAbnormalClosure, "error writing state")
 		}
-		_ = conn.ws.Close(websocket.StatusAbnormalClosure, "error writing state")
+		pub.mx.Lock()
 		delete(pub.connections, peer)
+		pub.mx.Unlock()
 		return
 	}
 	slog.Debug("wrote message to peer", "peer", peer)
